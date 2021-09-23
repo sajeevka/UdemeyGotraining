@@ -14,6 +14,7 @@ import (
 	"regexp"; "strconv"
 	"encoding/json"
 	"crypto/sha512"; "encoding/base64"
+	
 )
 
 
@@ -168,33 +169,37 @@ func makeFunc_handleHashRequest() func
 	}
 }
 
-// Handle requests that are to be specifically ignored
-func handleIgnoredRequest(w http.ResponseWriter, req *http.Request) {
-	log.Print("handler was called for a request that is being ignored..., req.URL.Path=", req.URL.Path, "\n")
-}
+
 
 // Returns some server statistics
 func handleStatsRequest(w http.ResponseWriter, req *http.Request) {
-	serverStats.RLock()
-	stats := struct {
-		Total int  "total"  // Need to give this a field lable to get "total" to have a lower case name in the JSON output
-		Average float32  "average"  // Similar for "average"
-	}{
-		Total: serverStats.newHashNumRequests,
-		Average: float32(serverStats.newHashMicroSecs) /  float32(serverStats.newHashNumRequests),
-	}
-	serverStats.RUnlock()
+         
 
-	encodedStats, err := json.Marshal(stats)
-	if err == nil {
-		io.WriteString(w, string(encodedStats) + "\n")
-	}
+	   serverStats.RLock()
+	    stats := struct {
+		  Total int  "total"  // Need to give this a field lable to get "total" to have a lower case name in the JSON output
+		  Average float32  "average"  // Similar for "average"
+	    }{
+	    	Total: serverStats.newHashNumRequests,
+		 Average: float32(serverStats.newHashMicroSecs) /  float32(serverStats.newHashNumRequests),
+	    }
+	    serverStats.RUnlock()
+
+	    encodedStats, err := json.Marshal(stats)
+	    if err == nil {
+		    io.WriteString(w, string(encodedStats) + "\n")
+	    }
+        
+        if stats.Total == 0 {
+          fmt.Fprint(w, "No stats yet for hashing\n")
+        }
+
 }
 
 
-///////////////////////////////////////////////////////////////////////////////
+
 // Main
-///////////////////////////////////////////////////////////////////////////////
+
 
 func main() {
 	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile)
@@ -221,62 +226,76 @@ func main() {
 		fmt.Println("Invalid port number - must be in the range [0, 65535]")
 		return
 	}
-	log.Print("Creating server on port ", *serverPort, "\n")
-
+	
 
 	
 	// Initialize  handlers for HTTP server and the HTTP server itself
 	
-
-	
-	http.HandleFunc("/favicon.ico", handleIgnoredRequest)
-	http.HandleFunc("/hash/", makeFunc_handleHashRequest())
-	http.HandleFunc("/hash", handleHashRequest_rootOnly)
-	http.HandleFunc("/stats/", handleStatsRequest)
-	http.HandleFunc("/stats", handleStatsRequest)
-	http.HandleFunc("/", handleGeneralRequest)  // If this doesn't happen, the default handler just returns "404 page not found"
 	shutdownRequested := make(chan string)
 	handleShutdownRequest := func(w http.ResponseWriter, req *http.Request) {
 		close(shutdownRequested)
 	}
+
+	
+	
+	http.HandleFunc("/hash/", makeFunc_handleHashRequest())
+	http.HandleFunc("/hash", handleHashRequest_rootOnly)
+	http.HandleFunc("/stats", handleStatsRequest)
+	http.HandleFunc("/", handleGeneralRequest)  // If this doesn't happen, the default handler just returns "404 page not found"
 	http.HandleFunc("/shutdown", handleShutdownRequest)
 	http.HandleFunc("/shutdown/", handleShutdownRequest)
 
-	//Start the server in the default or given port
+	
+
+	//initialize the server in the default or given port
+
+    log.Print("Creating server on port ", *serverPort, "\n")
 
 	server := &http.Server{Addr: fmt.Sprintf(":%d", *serverPort)}
 
 	
-	server.SetKeepAlivesEnabled(false)
+	
 
 
-	////////////////////
+	
 	// Run HTTP server and until a shutdown request comes
-	////////////////////
+	
 
 	const serverInitError = "Initialization error"
+
 	shutdownComplete := make(chan struct{})
+
 	go func() {
 		err := server.ListenAndServe()
 		if err != nil {
-			log.Printf("HTTP server ListenAndServe: %v", err)
+			log.Printf("HTTP server message: %v", err)
 			if err != http.ErrServerClosed {
 				shutdownRequested <- serverInitError
+				log.Println("HTTP server couldnot start")
 				close(shutdownRequested)
 			}
 		}
 		close(shutdownComplete)
-		log.Println("Server created and then shutdown...")
+		
 	}()
 
 	shutdownRequestCause := <- shutdownRequested
 	if shutdownRequestCause != serverInitError {
 		log.Println("Shutting down server...")
-		if err := server.Shutdown(context.Background()); err != nil {
+		// gracefully shutdown the server:
+        // waiting indefinitely for connections to return to idle and then shut down.
+        server.SetKeepAlivesEnabled(false)
+        err := server.Shutdown(context.Background());
+		if err != nil {
 			// Error from closing listeners, or context timeout:
-			log.Printf("HTTP server Shutdown: %v", err)
+			log.Printf("HTTP server could not gracefully shutdown: %v", err)
 		}
-
+        log.Println("Server created and then shutdown...")
 		<- shutdownComplete  // Wait for the shutdown to finish
 	}
+
+
 }
+
+
+
