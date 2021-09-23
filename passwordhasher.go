@@ -82,13 +82,13 @@ func handleGeneralRequest(w http.ResponseWriter, req *http.Request) {
 		"    .../shutdown - gracefully shut down the server.  The server will immediately stop accepting new connections and will wait for all active connections for graceful shutdown\n")
 }
 
-// Store and encode a new password if provided
+// Store and base64encode hash of a new password if provided
 func handleHashRequest_rootOnly(w http.ResponseWriter, req *http.Request) {
 
     startTime := time.Now()
 	
 
-	// Do the one time read of req.Body data (it is an io.ReadCloser which is strictly read-once)
+	// Do the one time read of req.Body data 
 	bodyData, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		log.Print(err)
