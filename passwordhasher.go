@@ -11,7 +11,7 @@ import (
 	"flag"
 	"net/http"; "net/url"
 	"context"; "sync"
-	"regexp"; "strconv"
+    "strconv"
 	"encoding/json"
 	"crypto/sha512"; "encoding/base64"
 	
@@ -129,43 +129,36 @@ func handleHashRequest_rootOnly(w http.ResponseWriter, req *http.Request) {
 
 // Returns a request handler function that will return the encoded password corresponding with the ID provided (if available)
 
-func makeFunc_handleHashRequest() func
-	(w http.ResponseWriter, req *http.Request,
-) {
-	compiledNewHashRegex := regexp.MustCompile("/hash/*$")
-	compiledHashIDRegex  := regexp.MustCompile("/hash/([0-9]+)/*$")
+func makeFunc_handleHashRequest(w http.ResponseWriter, req *http.Request ) {
 
-	return func (w http.ResponseWriter, req *http.Request) {
-		if compiledNewHashRegex.MatchString(req.RequestURI) {
-			handleHashRequest_rootOnly(w, req)
-			return
-		} else if matchedStrings := compiledHashIDRegex.FindStringSubmatch(req.RequestURI); len(matchedStrings) == 2 {
-			i, err := strconv.Atoi(matchedStrings[1])
-			if err != nil {
-				http.NotFound(w, req)  // somehow this didn't translate (the previous regex should have made this impossible) - send 404 response
-				return
-			}
 
-			var passwordHashbase64 string
-			passwordHashbase64Available := false
-			passwordDataMutex.RLock()
-			if (1 <= i) && (i <= len(passwordData)) && (time.Since(passwordData[i-1].requestedTime).Seconds() >= 5) {
-				passwordHashbase64Available = true
-				passwordHashbase64 = passwordData[i-1].passwordHashbase64
-			}
-			passwordDataMutex.RUnlock()
-
-			if passwordHashbase64Available {
-				io.WriteString(w, passwordHashbase64 + "\n")
-				return
-			} else {
-				http.NotFound(w, req)  // no pattern matched (no corresponding hash ID available yet) - send 404 response
-				return
-			}
-		} else {
-			http.NotFound(w, req)  // no pattern matched (an invalid ID was given) - send 404 response
+    switch req.Method {
+	case "GET":
+		// Parse the requested ID
+		reqID := req.URL.Path[len("/hash/"):]
+		id, err := strconv.ParseUint(reqID, 0, 64)
+		if err != nil {
+			 http.Error(w, fmt.Sprintf("Expected request id to be an integer, but got '%s'\n", reqID), http.StatusBadRequest)
 			return
 		}
+
+        var passwordHashbase64 string
+		passwordHashbase64Available := false
+		passwordDataMutex.RLock()
+		if (1 <= id) && ( int64(id)  <= int64(len(passwordData))) && (time.Since(passwordData[id-1].requestedTime).Seconds() >= 5) {
+			passwordHashbase64Available = true
+			passwordHashbase64 = passwordData[id-1].passwordHashbase64
+		}
+		passwordDataMutex.RUnlock()
+
+		if passwordHashbase64Available {
+			io.WriteString(w, passwordHashbase64 + "\n")
+			return
+		} else {
+			http.NotFound(w, req)  // no pattern matched (no corresponding hash ID available yet) - send 404 response
+			return
+		}
+
 	}
 }
 
@@ -238,7 +231,7 @@ func main() {
 
 	
 	
-	http.HandleFunc("/hash/", makeFunc_handleHashRequest())
+	http.HandleFunc("/hash/", makeFunc_handleHashRequest)
 	http.HandleFunc("/hash", handleHashRequest_rootOnly)
 	http.HandleFunc("/stats", handleStatsRequest)
 	http.HandleFunc("/", handleGeneralRequest)  // If this doesn't happen, the default handler just returns "404 page not found"
