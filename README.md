@@ -4,7 +4,7 @@ Author - Anu H
 
 
 
-HTTP Post Hash handler
+HTTP Post Hash handler (/hash)
 
 Parses request, then store the hashed and encoded password and time of the request in the buffered channel.
 
